@@ -1,0 +1,35 @@
+{
+  "name": "@profullstack/coinpay-onboard",
+  "version": "0.1.0",
+  "description": "Take crypto on CoinPay, set up in one pass: Sign in with CoinPay, a business, payout wallets, webhook, keys into the vault. Library, CLI and MCP; the onboarding behind pay.agent and every fleet site launch.",
+  "license": "MIT",
+  "type": "module",
+  "repository": { "type": "git", "url": "git+https://github.com/profullstack/coinpay-onboard.git" },
+  "homepage": "https://github.com/profullstack/coinpay-onboard",
+  "bin": { "coinpay-onboard": "bin/coinpay-onboard" },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./oauth": { "types": "./dist/oauth.d.ts", "default": "./dist/oauth.js" },
+    "./cli": { "types": "./dist/cli.d.ts", "default": "./dist/cli.js" },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist", "bin", "README.md", "LICENSE"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  }
+}
