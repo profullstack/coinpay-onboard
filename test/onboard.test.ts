@@ -36,7 +36,8 @@ function fakeCoinPay(state: { businesses: any[]; wallets: any[]; refuse?: string
         state.wallets.push({ cryptocurrency: body.cryptocurrency, wallet_address: body.wallet_address })
         return json(201, { success: true })
       case 'GET /api/wallets':
-        return json(200, { success: true, wallets: state.wallets })
+        // Like CoinPay: with a business id, only that business's own wallets.
+        return json(200, { success: true, wallets: u.searchParams.get('source') === 'business' ? (state as any).businessWallets ?? [] : state.wallets })
       case 'POST /api/payments/create':
         return json(201, { success: true, payment: { id: 'pay-1', status: 'pending', payment_address: 'So1addr', amount_usd: body.amount_usd, amount_crypto: '5.000000', currency: body.currency, blockchain: 'USDC_SOL', expires_at: null } })
     }

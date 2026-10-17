@@ -307,14 +307,23 @@ export async function onboard(client: CoinPay, input: OnboardInput): Promise<Onb
 
   let coins: string[] = []
   try {
-    const wallets = await client.wallets('all', business.id)
-    coins = [...new Set(wallets.map((w) => String(w.cryptocurrency).toLowerCase()).filter(Boolean))]
+    coins = await payableBy(client, business.id)
     record('coins', coins.length > 0, coins.length ? `can be paid in ${coins.join(', ')}` : 'no payout addresses yet: add one to take payments')
   } catch (error) {
     record('coins', false, failed(error))
   }
 
   return { business, webhookSecret: secret, apiKey: typeof business.api_key === 'string' ? business.api_key : null, coins, steps }
+}
+
+/**
+ * The coins a business can be paid in: its own payout wallets, and the
+ * account's, which CoinPay falls back to. (`/api/wallets?business_id=` lists
+ * only the business's own, so both are asked for.)
+ */
+export async function payableBy(client: CoinPay, businessId: string): Promise<string[]> {
+  const [account, business] = await Promise.all([client.wallets('account').catch(() => [] as Wallet[]), client.wallets('business', businessId)])
+  return [...new Set([...business, ...account].map((w) => String(w.cryptocurrency).toLowerCase()).filter(Boolean))]
 }
 
 /** Which of our coin ids a set of payout wallets can be paid in. */
