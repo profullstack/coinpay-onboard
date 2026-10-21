@@ -48,6 +48,39 @@ const payment = await coinpay.createPayment({ businessId: ready.business.id, amo
 verifyWebhook(rawBody, req.headers['x-coinpay-signature'], ready.webhookSecret!)
 ```
 
+## Hosted checkout (any coin or PayPal)
+
+The buyer picks the method on CoinPay's page; the site never builds a chain picker.
+
+```ts
+import { CoinPay, readWebhook, verifyWebhook } from '@profullstack/coinpay-onboard'
+
+const coinpay = new CoinPay({ token: process.env.COINPAY_API_KEY }) // the business cp_live_ key
+const session = await coinpay.createCheckoutSession({
+  amount: 19,                         // USD
+  description: 'Pro plan, 1 month',
+  customerEmail: user.email,          // required
+  accountId: user.id,                 // required; use the email for guests
+  property: 'example.com',            // the site hostname
+  metadata: { plan: 'pro' },
+  successUrl: 'https://example.com/billing?session={CHECKOUT_SESSION_ID}',
+  cancelUrl: 'https://example.com/pricing',
+})
+redirect(session.url)                 // https://coinpayportal.com/checkout/cs_...
+
+// webhook
+if (!verifyWebhook(rawBody, req.headers['x-coinpay-signature'], secret)) return 401
+const event = readWebhook(JSON.parse(rawBody))
+if (event.paid) grant(event.accountId, event.metadata, event.checkoutSessionId)
+```
+
+`readWebhook` reads the nested `data` (the top-level id is the event, not the
+payment), treats `payment.confirmed` and `payment.forwarded` as paid, and a
+PayPal capture (`payment.confirmed`, status `completed`, `method: 'paypal'`)
+the same. `coinpay.checkoutSession(id)` polls a session; with the business key
+it carries the payer fields and payment ids. With an OAuth token, pass
+`businessId`.
+
 ## CLI and MCP
 
 ```
