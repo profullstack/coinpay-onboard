@@ -194,6 +194,45 @@ export class CoinPay {
     return this.toPayment(body.payment ?? body)
   }
 
+  /**
+   * A hosted checkout session (CoinPay `POST /api/checkout/sessions`): send the
+   * buyer to `url`, where they pick any coin the business can be paid in, or
+   * PayPal. Every webhook it produces carries `checkout_session_id`,
+   * `customer_email`, `account_id` and `property` in `data`.
+   *
+   * Auth is the business API key; an OAuth or dashboard token needs `businessId`.
+   */
+  async createCheckoutSession(input: CheckoutSessionInput): Promise<CheckoutSession> {
+    if (!input.customerEmail?.trim()) throw new CoinPayError('customerEmail is required for a checkout session', 400)
+    if (!input.accountId?.trim()) throw new CoinPayError('accountId is required for a checkout session (use the email for guests)', 400)
+    const body = await this.call<any>(
+      'POST',
+      '/api/checkout/sessions',
+      {
+        ...(input.businessId ? { business_id: input.businessId } : {}),
+        amount: input.amount,
+        currency: input.currency ?? 'USD',
+        description: input.description,
+        customer_email: input.customerEmail.trim(),
+        account_id: input.accountId.trim(),
+        ...(input.property ? { property: input.property } : {}),
+        ...(input.metadata ? { metadata: input.metadata } : {}),
+        ...(input.successUrl ? { success_url: input.successUrl } : {}),
+        ...(input.cancelUrl ? { cancel_url: input.cancelUrl } : {}),
+        expires_in_minutes: input.expiresInMinutes ?? 60,
+        ...(input.allowedMethods?.length ? { allowed_methods: input.allowedMethods } : {}),
+      },
+      input.idempotencyKey ? { 'idempotency-key': input.idempotencyKey } : {},
+    )
+    return toSession(body.session ?? body)
+  }
+
+  /** A checkout session's state. With the business key it also carries the customer fields and payment ids. */
+  async checkoutSession(id: string): Promise<CheckoutSession> {
+    const body = await this.call<any>('GET', `/api/checkout/sessions/${encodeURIComponent(id)}`)
+    return toSession(body.session ?? body)
+  }
+
   private toPayment(p: any): Payment {
     return {
       id: String(p.id),
@@ -206,6 +245,75 @@ export class CoinPay {
       expiresAt: p.expires_at ?? null,
       checkoutUrl: `${this.base}/pay/${p.id}`,
     }
+  }
+}
+
+export type CheckoutSessionInput = {
+  /** US dollars. */
+  amount: number
+  currency?: 'USD' | string
+  description?: string
+  /** Required by CoinPay: where receipts go and how the site finds the buyer again. */
+  customerEmail: string
+  /** Required by CoinPay: the site's own id for the buyer (the email for guests). */
+  accountId: string
+  /** The site hostname the payment is for; defaults to the business name. */
+  property?: string
+  metadata?: Record<string, unknown>
+  /** May contain {CHECKOUT_SESSION_ID}. */
+  successUrl?: string
+  cancelUrl?: string
+  /** 15-120, default 60. */
+  expiresInMinutes?: number
+  /** Coin codes (USDC_POL, BTC...), CRYPTO or PAYPAL; default every method the business has. */
+  allowedMethods?: string[]
+  /** Needed only when authenticating with an OAuth or dashboard token instead of the business key. */
+  businessId?: string
+  idempotencyKey?: string
+}
+
+export type CheckoutSession = {
+  id: string
+  url: string
+  status: string
+  amount: number
+  currency: string
+  description: string | null
+  property: string | null
+  /** The methods the buyer can pick from (coin codes and/or PAYPAL). */
+  methods: string[]
+  expiresAt: string | null
+  /** Owner view only. */
+  customerEmail?: string | null
+  accountId?: string | null
+  metadata?: Record<string, unknown> | null
+  paymentId?: string | null
+  paypalTransactionId?: string | null
+  paidMethod?: string | null
+  paidAt?: string | null
+  raw: Record<string, unknown>
+}
+
+function toSession(s: any): CheckoutSession {
+  const methods = Array.isArray(s.methods) ? s.methods.map((m: any) => String(typeof m === 'string' ? m : m?.code ?? m?.id ?? m?.method ?? '')).filter(Boolean) : []
+  return {
+    id: String(s.id),
+    url: String(s.url ?? ''),
+    status: String(s.status ?? 'open'),
+    amount: Number(s.amount ?? 0),
+    currency: String(s.currency ?? 'USD'),
+    description: s.description ?? null,
+    property: s.property ?? null,
+    methods,
+    expiresAt: s.expires_at ?? null,
+    ...('customer_email' in s ? { customerEmail: s.customer_email ?? null } : {}),
+    ...('account_id' in s ? { accountId: s.account_id ?? null } : {}),
+    ...('metadata' in s ? { metadata: s.metadata ?? null } : {}),
+    ...('payment_id' in s ? { paymentId: s.payment_id ?? null } : {}),
+    ...('paypal_transaction_id' in s ? { paypalTransactionId: s.paypal_transaction_id ?? null } : {}),
+    paidMethod: s.paid_method ?? null,
+    paidAt: s.paid_at ?? null,
+    raw: s,
   }
 }
 
@@ -360,10 +468,83 @@ export type WebhookEvent = {
   type: string
   created_at?: string
   business_id?: string
-  data: { payment_id: string; status: string; amount_usd?: number | string; amount_crypto?: string; currency?: string; tx_hash?: string; metadata?: Record<string, unknown>; [k: string]: unknown }
+  data: {
+    payment_id: string
+    status: string
+    amount?: number | string
+    amount_usd?: number | string
+    amount_crypto?: string
+    currency?: string
+    tx_hash?: string
+    metadata?: Record<string, unknown>
+    /** Set when the payment came from a hosted checkout session. */
+    checkout_session_id?: string
+    customer_email?: string
+    account_id?: string
+    property?: string
+    /** 'paypal' for a PayPal capture; absent for crypto. */
+    rail?: string
+    payment_method?: string
+    [k: string]: unknown
+  }
 }
 
 /** The event's payment id: the payload is nested, and the top-level id is the EVENT. */
 export function eventPaymentId(event: WebhookEvent): string {
   return String(event.data?.payment_id ?? '')
+}
+
+/** Event types that mean the money arrived (confirmed, or swept on to the merchant). */
+export const PAID_EVENTS = new Set(['payment.confirmed', 'payment.forwarded'])
+const PAID_STATUSES = new Set(['confirmed', 'forwarded', 'completed', 'paid'])
+
+export type ReadWebhook = {
+  /** The event id (evt_...), for replay protection. */
+  eventId: string
+  type: string
+  paymentId: string
+  checkoutSessionId: string | null
+  status: string
+  /** confirmed / forwarded crypto, or a captured PayPal order. */
+  paid: boolean
+  amountUsd: number
+  /** 'paypal' or the coin, e.g. 'USDC_POL'. */
+  method: string
+  customerEmail: string | null
+  accountId: string | null
+  property: string | null
+  /** The site's own metadata (as sent on the session or payment). */
+  metadata: Record<string, unknown>
+}
+
+/**
+ * Everything a site needs out of a CoinPay webhook, read from the nested
+ * `data` (falling back to the flat shape older test senders use). A PayPal
+ * capture arrives as payment.confirmed with status 'completed'.
+ */
+export function readWebhook(payload: unknown): ReadWebhook {
+  const p = (payload ?? {}) as Record<string, any>
+  const d = (p.data && typeof p.data === 'object' ? p.data : p) as Record<string, any>
+  const metadata = (d.metadata && typeof d.metadata === 'object' ? d.metadata : p.metadata && typeof p.metadata === 'object' ? p.metadata : {}) as Record<string, any>
+  const type = String(p.type ?? p.event ?? '')
+  const status = String(d.status ?? '').toLowerCase()
+  const str = (...v: unknown[]) => {
+    for (const x of v) if (typeof x === 'string' && x.trim()) return x.trim()
+    return null
+  }
+  const paid = type ? PAID_EVENTS.has(type) && (status === '' || PAID_STATUSES.has(status)) : PAID_STATUSES.has(status)
+  return {
+    eventId: String(p.id ?? ''),
+    type,
+    paymentId: String(d.payment_id ?? (p.data ? '' : d.id) ?? ''),
+    checkoutSessionId: str(d.checkout_session_id, metadata.checkout_session_id),
+    status,
+    paid,
+    amountUsd: Number(d.amount_usd ?? d.amount ?? 0) || 0,
+    method: String(d.rail === 'paypal' || d.payment_method === 'paypal' ? 'paypal' : d.blockchain ?? d.currency ?? '').toUpperCase().replace(/^PAYPAL$/, 'paypal'),
+    customerEmail: str(d.customer_email, metadata.customer_email),
+    accountId: str(d.account_id, metadata.account_id),
+    property: str(d.property, metadata.property),
+    metadata,
+  }
 }

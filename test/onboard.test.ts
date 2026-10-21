@@ -154,3 +154,49 @@ describe('pieces', () => {
     expect(payableCoins(['USDC_SOL', 'BTC', 'NOPE'])).toEqual(['usdc_sol', 'btc'])
   })
 })
+
+describe('checkout sessions', () => {
+  test('creates a session with the required payer fields and returns the hosted url', async () => {
+    const seen: any[] = []
+    const fetchImpl = (async (url: string | URL, init: RequestInit = {}) => {
+      seen.push({ path: new URL(String(url)).pathname, method: init.method, body: init.body ? JSON.parse(String(init.body)) : undefined, auth: (init.headers as any).authorization })
+      if (init.method === 'POST')
+        return new Response(JSON.stringify({ success: true, id: 'cs_abc', url: 'https://coinpayportal.com/checkout/cs_abc', status: 'open', amount: 9, currency: 'USD', property: 'x.com', expires_at: 'z', methods: ['USDC_POL', 'BTC', 'PAYPAL'] }), { status: 201 })
+      return new Response(JSON.stringify({ success: true, session: { id: 'cs_abc', status: 'paid', amount: 9, methods: [], customer_email: 'a@b.co', account_id: 'u1', payment_id: 'p1', paid_method: 'PAYPAL' } }), { status: 200 })
+    }) as typeof fetch
+    const cp = new CoinPay({ token: 'cp_live_k', fetch: fetchImpl })
+    const s = await cp.createCheckoutSession({ amount: 9, description: 'Pro', customerEmail: ' a@b.co ', accountId: 'u1', property: 'x.com', metadata: { plan: 'pro' }, successUrl: 'https://x.com/ok?s={CHECKOUT_SESSION_ID}' })
+    expect(s.url).toBe('https://coinpayportal.com/checkout/cs_abc')
+    expect(s.methods).toEqual(['USDC_POL', 'BTC', 'PAYPAL'])
+    expect(seen[0].path).toBe('/api/checkout/sessions')
+    expect(seen[0].auth).toBe('Bearer cp_live_k')
+    expect(seen[0].body).toMatchObject({ amount: 9, currency: 'USD', customer_email: 'a@b.co', account_id: 'u1', property: 'x.com', metadata: { plan: 'pro' }, expires_in_minutes: 60 })
+    const got = await cp.checkoutSession('cs_abc')
+    expect(got).toMatchObject({ status: 'paid', customerEmail: 'a@b.co', accountId: 'u1', paymentId: 'p1', paidMethod: 'PAYPAL' })
+  })
+
+  test('refuses a session without email or account id before calling CoinPay', async () => {
+    const cp = new CoinPay({ token: 'k', fetch: (async () => { throw new Error('should not call') }) as any })
+    await expect(cp.createCheckoutSession({ amount: 1, customerEmail: '', accountId: 'u' })).rejects.toThrow(/customerEmail/)
+    await expect(cp.createCheckoutSession({ amount: 1, customerEmail: 'a@b.co', accountId: ' ' })).rejects.toThrow(/accountId/)
+  })
+})
+
+describe('readWebhook', () => {
+  test('reads the nested crypto event, never the event id as the payment', async () => {
+    const { readWebhook } = await import('../src/index.js')
+    const r = readWebhook({ id: 'evt_p1_1', type: 'payment.forwarded', data: { payment_id: 'p1', status: 'forwarded', amount_usd: '9.00', blockchain: 'USDC_POL', checkout_session_id: 'cs_abc', customer_email: 'a@b.co', account_id: 'u1', property: 'x.com', metadata: { plan: 'pro' } } })
+    expect(r).toMatchObject({ eventId: 'evt_p1_1', paymentId: 'p1', paid: true, amountUsd: 9, method: 'USDC_POL', checkoutSessionId: 'cs_abc', customerEmail: 'a@b.co', accountId: 'u1', property: 'x.com', metadata: { plan: 'pro' } })
+  })
+  test('a PayPal capture is payment.confirmed with status completed', async () => {
+    const { readWebhook } = await import('../src/index.js')
+    const r = readWebhook({ id: 'evt_t1', type: 'payment.confirmed', data: { payment_id: 't1', status: 'completed', rail: 'paypal', amount: 9, metadata: { checkout_session_id: 'cs_abc', account_id: 'u1', customer_email: 'a@b.co', property: 'x.com' } } })
+    expect(r).toMatchObject({ paid: true, method: 'paypal', checkoutSessionId: 'cs_abc', accountId: 'u1' })
+  })
+  test('expired and pending are not paid', async () => {
+    const { readWebhook } = await import('../src/index.js')
+    expect(readWebhook({ type: 'payment.expired', data: { payment_id: 'p', status: 'expired' } }).paid).toBe(false)
+    expect(readWebhook({ type: 'payment.pending', data: { payment_id: 'p', status: 'pending' } }).paid).toBe(false)
+    expect(readWebhook({ payment_id: 'p', status: 'confirmed' }).paid).toBe(true)
+  })
+})
