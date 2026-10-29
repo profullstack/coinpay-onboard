@@ -48,6 +48,28 @@ const payment = await coinpay.createPayment({ businessId: ready.business.id, amo
 verifyWebhook(rawBody, req.headers['x-coinpay-signature'], ready.webhookSecret!)
 ```
 
+## Sign in with CoinPay on a relying party
+
+Confidential client, auth code + PKCE S256 + `state` + `nonce`, scopes `openid profile email`.
+
+```ts
+import { authorizeUrl, finishSignIn, pkce, randomToken, sameState, SIGN_IN_SCOPES } from '@profullstack/coinpay-onboard/oauth'
+
+// start: keep verifier, state and nonce server-side (or in a signed httpOnly cookie)
+const { verifier, challenge } = pkce()
+const state = randomToken(), nonce = randomToken()
+redirect(authorizeUrl({ clientId, redirectUri, state, nonce, challenge, scopes: SIGN_IN_SCOPES }))
+
+// callback: state must match, then code exchange + id_token checks (iss, aud, exp, nonce) + userinfo
+if (!sameState(saved.state, query.state)) throw new Error('bad state')
+const { sub, email, name } = await finishSignIn({ code, verifier, nonce, clientId, clientSecret, redirectUri })
+```
+
+STANDING rule: bind the local account to `sub` only. The CoinPay `email` is unverified
+contact information: never sign into an existing account because the email matches,
+never store it as a verified account email, never grant anything from it. Link CoinPay
+to an existing account only while the user is signed in to it.
+
 ## Hosted checkout (any coin or PayPal)
 
 The buyer picks the method on CoinPay's page; the site never builds a chain picker.
