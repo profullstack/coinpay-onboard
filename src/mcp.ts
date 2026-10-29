@@ -38,7 +38,7 @@ export function createMcpServer(client: () => Promise<CoinPay> = () => merchantC
   server.tool(
     'onboard',
     'Ready the signed-in merchant to take crypto: payout addresses, a business by name, wallets copied in, webhook. Returns each step.',
-    { business: z.string().min(1).max(100), webhook: z.string().url().optional(), addresses: z.record(z.string()).optional() },
+    { business: z.string().min(1).max(100), webhook: z.string().url().optional(), addresses: z.record(z.string(), z.string()).optional() },
     async ({ business, webhook, addresses }: { business: string; webhook?: string; addresses?: Record<string, string> }) => {
       try {
         const r = await onboard(await client(), { businessName: business, ...(webhook ? { webhookUrl: webhook } : {}), ...(addresses ? { addresses } : {}) })
