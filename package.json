@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/coinpay-onboard",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Take crypto on CoinPay, set up in one pass: Sign in with CoinPay, a business, payout wallets, webhook, keys into the vault. Library, CLI and MCP; the onboarding behind pay.agent and every fleet site launch.",
   "license": "MIT",
   "type": "module",
@@ -24,8 +24,8 @@
     "prepublishOnly": "bun run build"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.17.0",
-    "zod": "^3.25.0"
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",
