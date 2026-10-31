@@ -1,10 +1,28 @@
 import { describe, expect, test } from 'bun:test'
+import { resolveCoinPayAccountLink, resolveCoinPaySignIn } from '../src/identity.js'
 import { authorizeUrl, checkIdToken, finishSignIn, pkce, randomToken, sameState, SIGN_IN_SCOPES } from '../src/oauth.js'
 
 const jwt = (claims: Record<string, unknown>) =>
   ['{"alg":"HS256","typ":"JWT"}', JSON.stringify(claims), 'sig'].map((part, i) => (i < 2 ? Buffer.from(part).toString('base64url') : part)).join('.')
 const NOW = 1_800_000_000_000
 const good = { iss: 'https://coinpayportal.com', sub: 'u_1', aud: 'cp_app', exp: NOW / 1000 + 600, nonce: 'n0nce' }
+
+describe('CoinPay account binding policy', () => {
+  test('allows one CoinPay identity to be linked to multiple local accounts', () => {
+    expect(resolveCoinPayAccountLink({ bindings: [{ sub: 'u_1', userId: 'local-a' }], sub: 'u_1', userId: 'local-b' })).toEqual({ kind: 'link' })
+    expect(resolveCoinPayAccountLink({ bindings: [{ sub: 'u_1', userId: 'local-a' }], sub: 'u_1', userId: 'local-a' })).toEqual({ kind: 'already_linked' })
+  })
+
+  test('keeps one CoinPay identity per local account', () => {
+    expect(resolveCoinPayAccountLink({ bindings: [{ sub: 'u_1', userId: 'local-a' }], sub: 'u_2', userId: 'local-a' })).toEqual({ kind: 'account_has_other_identity' })
+  })
+
+  test('requires an account choice when a CoinPay identity has several local accounts', () => {
+    expect(resolveCoinPaySignIn([])).toEqual({ kind: 'create_account' })
+    expect(resolveCoinPaySignIn(['local-a'])).toEqual({ kind: 'sign_in', userId: 'local-a' })
+    expect(resolveCoinPaySignIn(['local-a', 'local-b', 'local-a'])).toEqual({ kind: 'choose_account', userIds: ['local-a', 'local-b'] })
+  })
+})
 
 describe('sign in with CoinPay', () => {
   test('authorize URL carries the nonce, S256 and the sign-in scopes', () => {

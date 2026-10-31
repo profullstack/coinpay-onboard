@@ -70,6 +70,12 @@ contact information: never sign into an existing account because the email match
 never store it as a verified account email, never grant anything from it. Link CoinPay
 to an existing account only while the user is signed in to it.
 
+Applications can use `@profullstack/coinpay-onboard/identity` for consistent
+account-link policy. A CoinPay identity may be linked by its owner to multiple
+local accounts; a local account may still link only one CoinPay identity. If a
+CoinPay sign-in maps to multiple local accounts, use `resolveCoinPaySignIn()` to
+present an authenticated account chooser instead of choosing an account implicitly.
+
 ## Hosted checkout (any coin or PayPal)
 
 The buyer picks the method on CoinPay's page; the site never builds a chain picker.
