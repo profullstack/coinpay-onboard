@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/coinpay-onboard",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Take crypto on CoinPay, set up in one pass: Sign in with CoinPay, a business, payout wallets, webhook, keys into the vault. Library, CLI and MCP; the onboarding behind pay.agent and every fleet site launch.",
   "license": "MIT",
   "type": "module",
@@ -13,6 +13,7 @@
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
     "./oauth": { "types": "./dist/oauth.d.ts", "default": "./dist/oauth.js" },
     "./identity": { "types": "./dist/identity.d.ts", "default": "./dist/identity.js" },
+    "./pass": { "types": "./dist/pass.d.ts", "default": "./dist/pass.js" },
     "./cli": { "types": "./dist/cli.d.ts", "default": "./dist/cli.js" },
     "./package.json": "./package.json"
   },

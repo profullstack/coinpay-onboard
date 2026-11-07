@@ -5,6 +5,7 @@
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { DEFAULT_BASE } from './index.js'
+import { passFromUserinfo, type CoinpayPass } from './pass.js'
 
 /** What onboarding needs: who you are, your payout wallets, and acting as your merchant account. */
 export const ONBOARD_SCOPES = ['openid', 'profile', 'email', 'wallet:read', 'merchant']
@@ -166,6 +167,8 @@ export type UserInfo = {
   name?: string
   preferred_username?: string
   picture?: string
+  /** Profullstack Pass; read it with passFromUserinfo(), which clamps a stale or malformed claim. */
+  pass?: { active?: boolean; expires_at?: string }
   [claim: string]: unknown
 }
 
@@ -198,7 +201,7 @@ export async function finishSignIn(input: {
   issuer?: string
   fetch?: typeof fetch
   now?: number
-}): Promise<{ sub: string; email: string | null; name: string | null; claims: IdTokenClaims; userinfo: UserInfo; tokens: Tokens }> {
+}): Promise<{ sub: string; email: string | null; name: string | null; pass: CoinpayPass; claims: IdTokenClaims; userinfo: UserInfo; tokens: Tokens }> {
   const base = input.base ?? DEFAULT_BASE
   const tokens = await exchangeCode({ code: input.code, verifier: input.verifier, clientId: input.clientId, clientSecret: input.clientSecret, redirectUri: input.redirectUri, base, fetch: input.fetch, now: input.now })
   const claims = checkIdToken({ idToken: tokens.idToken, clientId: input.clientId, nonce: input.nonce, issuer: input.issuer ?? base, now: input.now })
@@ -206,5 +209,6 @@ export async function finishSignIn(input: {
   if (info.sub !== claims.sub) throw new Error('userinfo sub does not match the id_token')
   const email = typeof info.email === 'string' && info.email ? info.email : typeof claims.email === 'string' && claims.email ? claims.email : null
   const name = [info.name, info.preferred_username, claims.name].find((value): value is string => typeof value === 'string' && value.trim() !== '') ?? null
-  return { sub: claims.sub, email, name, claims, userinfo: info, tokens }
+  const pass = passFromUserinfo(info, input.now === undefined ? new Date() : new Date(input.now))
+  return { sub: claims.sub, email, name, pass, claims, userinfo: info, tokens }
 }
