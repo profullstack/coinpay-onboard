@@ -76,6 +76,25 @@ local accounts; a local account may still link only one CoinPay identity. If a
 CoinPay sign-in maps to multiple local accounts, use `resolveCoinPaySignIn()` to
 present an authenticated account chooser instead of choosing an account implicitly.
 
+## Profullstack Pass
+
+A user who deposits $99 into their own CoinPay wallet gets a free month on every
+Profullstack property. CoinPay reports it as a `pass` claim on userinfo (scope `openid`).
+Give full/paid access while it is active, then fall back to your normal crypto checkout.
+
+```ts
+import { hasPassAccess, passFromUserinfo, PASS_URL } from '@profullstack/coinpay-onboard'
+import { finishSignIn } from '@profullstack/coinpay-onboard/oauth'
+
+const { sub, pass } = await finishSignIn({ code, verifier, nonce, clientId, clientSecret, redirectUri })
+if (pass.active) grantPaidAccess(sub, { until: pass.expiresAt })   // or hasPassAccess(userinfoBody)
+else showCheckout({ orGetAPass: PASS_URL })                         // https://coinpayportal.com/pass
+```
+
+`passFromUserinfo(claims, now?)` is defensive: a missing claim (older CoinPay, failed
+lookup), garbage input, or `active: true` with a past or missing `expires_at` is
+`{ active: false }`. Re-check on each sign-in or token refresh; the pass expires.
+
 ## Hosted checkout (any coin or PayPal)
 
 The buyer picks the method on CoinPay's page; the site never builds a chain picker.

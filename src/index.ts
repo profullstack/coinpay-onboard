@@ -12,6 +12,8 @@
  */
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 
+export { PASS_URL, passFromUserinfo, hasPassAccess, type CoinpayPass } from './pass.js'
+
 export const DEFAULT_BASE = 'https://coinpayportal.com'
 
 /** What CoinPay takes payment in (POST /api/payments/create `currency`). */
