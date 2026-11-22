@@ -10,6 +10,7 @@
  *
  * Every step is idempotent: run it again and it finds what it made last time.
  */
+import { defaultUserAgent, withUserAgent } from './user-agent.js'
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 
 export { PASS_URL, passFromUserinfo, hasPassAccess, type CoinpayPass } from './pass.js'
@@ -70,6 +71,8 @@ export type CoinPayOptions = {
   token?: string
   base?: string
   fetch?: typeof fetch
+  /** User-Agent on every call; defaults to `<app>/<version> (+<site>) coinpay-onboard/<v>` from the environment. */
+  userAgent?: string
 }
 
 /** A thin CoinPay API client: the calls onboarding and taking payment need, nothing else. */
@@ -77,11 +80,13 @@ export class CoinPay {
   readonly base: string
   private readonly token: string | undefined
   private readonly doFetch: typeof fetch
+  private readonly userAgent: string
 
   constructor(options: CoinPayOptions = {}) {
     this.base = (options.base ?? DEFAULT_BASE).replace(/\/+$/, '').replace(/\/api$/, '')
     this.token = options.token
     this.doFetch = options.fetch ?? fetch
+    this.userAgent = options.userAgent || defaultUserAgent()
   }
 
   /** Signs in as a merchant with email and password; returns a client holding the session. */
@@ -95,12 +100,15 @@ export class CoinPay {
   async call<T = any>(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
     const response = await this.doFetch(this.base + path, {
       method,
-      headers: {
-        accept: 'application/json',
-        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-        ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
-        ...headers,
-      },
+      headers: withUserAgent(
+        {
+          accept: 'application/json',
+          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+          ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
+          ...headers,
+        },
+        this.userAgent,
+      ),
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.timeout(30_000),
     })
@@ -550,3 +558,5 @@ export function readWebhook(payload: unknown): ReadWebhook {
     metadata,
   }
 }
+
+export { defaultUserAgent } from './user-agent.js'

@@ -3,6 +3,7 @@
  * CoinPay accepts. Tokens last an hour; refresh tokens last 30 days and are
  * single-use (each refresh returns a new one), so keep the newest.
  */
+import { withUserAgent } from './user-agent.js'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { DEFAULT_BASE } from './index.js'
 import { passFromUserinfo, type CoinpayPass } from './pass.js'
@@ -54,7 +55,7 @@ export function authorizeUrl(input: { clientId: string; redirectUri: string; sta
 async function tokenRequest(params: Record<string, string>, base: string, doFetch: typeof fetch, now: number): Promise<Tokens> {
   const response = await doFetch(new URL('/api/oauth/token', base), {
     method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
+    headers: withUserAgent({ 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' }),
     body: new URLSearchParams(params).toString(),
     signal: AbortSignal.timeout(20_000),
   })
@@ -175,7 +176,7 @@ export type UserInfo = {
 /** GET /api/oauth/userinfo with the access token. */
 export async function userinfo(input: { accessToken: string; base?: string; fetch?: typeof fetch }): Promise<UserInfo> {
   const response = await (input.fetch ?? fetch)(new URL('/api/oauth/userinfo', input.base ?? DEFAULT_BASE), {
-    headers: { authorization: `Bearer ${input.accessToken}`, accept: 'application/json' },
+    headers: withUserAgent({ authorization: `Bearer ${input.accessToken}`, accept: 'application/json' }),
     signal: AbortSignal.timeout(20_000),
   })
   const body = (await response.json().catch(() => ({}))) as Record<string, any>
